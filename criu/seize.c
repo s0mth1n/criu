@@ -10,6 +10,7 @@
 #include <time.h>
 
 #include "int.h"
+#include "asm/types.h"
 #include "common/compiler.h"
 #include "cr_options.h"
 #include "cr-errno.h"
@@ -770,12 +771,40 @@ free:
 	return ret < 0 ? ret : nr_inprogress;
 }
 
+static void clear_futex_robust_list(const struct pstree_item *item)
+{
+	unsigned long n = 0;
+	int i;
+
+	for (i = 0; i < item->nr_threads; i++) {
+		CoreEntry *core;
+		ThreadCoreEntry *tc;
+
+		if (!item->core || !item->core[i] || !item->core[i]->thread_core)
+			continue;
+
+		core = item->core[i];
+		tc = core->thread_core;
+		if (!tc->futex_rla)
+			continue;
+
+		/* zero out robust_list_head->list. */
+		if (ptrace_poke_area(item->threads[i].real, &n,
+				     decode_pointer(tc->futex_rla), sizeof(n)))
+			pr_err("Unable to reset the robust list for %d\n",
+			       item->threads[i].real);
+	}
+}
+
 static void unseize_task_and_threads(const struct pstree_item *item, int st)
 {
 	int i;
 
 	if (item->pid->state == TASK_DEAD)
 		return;
+
+	if (st == TASK_DEAD)
+		clear_futex_robust_list(item);
 
 	/*
 	 * The st is the state we want to switch tasks into,
