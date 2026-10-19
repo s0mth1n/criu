@@ -701,6 +701,29 @@ static bool mount_has_relatime(const char *target)
 	return has_relatime && !has_noatime;
 }
 
+static bool mount_is_readonly(const char *target)
+{
+	FILE *f = fopen("/proc/self/mountinfo", "r");
+	char line[512];
+	bool is_ro = false;
+
+	if (!f)
+		return false;
+
+	while (fgets(line, sizeof(line), f)) {
+		if (strstr(line, target)) {
+			char *sep = strstr(line, " - ");
+			if (sep)
+				*sep = '\0';
+			if (strstr(line, " ro,"))
+				is_ro = true;
+			break;
+		}
+	}
+	fclose(f);
+	return is_ro;
+}
+
 static int write_id_map(const char *path, int id)
 {
 	char buf[64];
@@ -735,7 +758,8 @@ static void test_root_mount_remount(void)
 		int cstatus = 0;
 
 		if (unshare(CLONE_NEWUSER | CLONE_NEWNS) < 0) {
-			if (errno == EPERM || errno == EACCES || errno == ENOSPC) {
+			if (errno == EPERM || errno == EACCES ||
+			    errno == ENOSPC || errno == EINVAL) {
 				pr_msg("SKIP: unprivileged user namespace creation not permitted\n");
 				exit(0);
 			}
@@ -774,7 +798,7 @@ static void test_root_mount_remount(void)
 			exit(1);
 		}
 
-		if (mount("none", tmppath, "tmpfs", 0, NULL) < 0) {
+		if (mount("none", tmppath, "tmpfs", MS_NODEV, NULL) < 0) {
 			if (errno == EPERM || errno == EACCES) {
 				pr_msg("SKIP: mounting tmpfs inside user namespace not permitted\n");
 				rmdir(tmppath);
@@ -794,8 +818,11 @@ static void test_root_mount_remount(void)
 		}
 
 		if (cpid == 0) {
+			bool atime_dropped = false;
+
 			if (unshare(CLONE_NEWUSER | CLONE_NEWNS) < 0) {
-				if (errno == EPERM || errno == EACCES || errno == ENOSPC) {
+				if (errno == EPERM || errno == EACCES ||
+			    errno == ENOSPC || errno == EINVAL) {
 					pr_msg("SKIP: nested user namespace creation not permitted\n");
 					exit(0);
 				}
@@ -804,24 +831,81 @@ static void test_root_mount_remount(void)
 			}
 
 			/* Precondition: direct remount with divergent atime must fail with EPERM */
-			if (mount(NULL, tmppath, NULL, MS_REMOUNT | MS_BIND | MS_NOATIME, NULL) == 0) {
+			if (mount(NULL, tmppath, NULL,
+					  MS_REMOUNT | MS_BIND | MS_NODEV | MS_NOATIME,
+					  NULL) == 0) {
 				pr_msg("SKIP: kernel did not lock mount atime flags on userns clone\n");
 				exit(0);
 			}
 			if (errno != EPERM) {
+				if (errno == EACCES) {
+					pr_msg("SKIP: remount blocked by LSM policy, cannot test the fallback\n");
+					exit(0);
+				}
 				pr_perror("precondition failed: expected EPERM from direct remount");
 				exit(1);
 			}
 
+			/*
+			 * Happy path: flags matching the current state, atime mode
+			 * included, must succeed directly without any fallback.
+			 */
+			atime_dropped = true;
+			if (remount_root_flags(tmppath, MS_NODEV | MS_RELATIME,
+							   &atime_dropped) != 0) {
+				pr_err("remount_root_flags failed on non-divergent flags\n");
+				exit(1);
+			}
+			if (atime_dropped) {
+				pr_err("remount_root_flags reported a fallback on non-divergent flags\n");
+				exit(1);
+			}
+
 			/* Call the real remount_root_flags with dumped flags differing in atime */
-			if (remount_root_flags(tmppath, MS_NOATIME) != 0) {
+			if (remount_root_flags(tmppath, MS_NODEV | MS_NOATIME,
+							   &atime_dropped) != 0) {
 				pr_err("remount_root_flags failed\n");
+				exit(1);
+			}
+
+			if (!atime_dropped) {
+				pr_err("remount_root_flags did not report atime_dropped\n");
 				exit(1);
 			}
 
 			/* Assert resulting mount keeps current atime mode (relatime) */
 			if (!mount_has_relatime(tmppath)) {
 				pr_err("mount did not keep relatime option\n");
+				exit(1);
+			}
+
+			/* A locked nodev cannot be cleared: the atime fallback
+			 * must still report that failure */
+			if (remount_root_flags(tmppath, MS_RELATIME, NULL) == 0) {
+				pr_err("remount_root_flags hid a locked nodev failure\n");
+				exit(1);
+			}
+
+			/* While atime is dropped, the other dumped flags must still
+			 * be applied: ask for read-only with a divergent atime mode
+			 * and check the mount becomes read-only and keeps relatime.
+			 */
+			atime_dropped = false;
+			if (remount_root_flags(tmppath, MS_NODEV | MS_RDONLY | MS_NOATIME,
+					       &atime_dropped) != 0) {
+				pr_err("remount_root_flags failed for the read-only fallback\n");
+				exit(1);
+			}
+			if (!atime_dropped) {
+				pr_err("read-only fallback did not report atime_dropped\n");
+				exit(1);
+			}
+			if (!mount_is_readonly(tmppath)) {
+				pr_err("read-only flag was not applied by the fallback\n");
+				exit(1);
+			}
+			if (!mount_has_relatime(tmppath)) {
+				pr_err("mount did not keep relatime after the read-only fallback\n");
 				exit(1);
 			}
 
@@ -844,7 +928,10 @@ static void test_root_mount_remount(void)
 		exit(0);
 	}
 
-	assert(waitpid(pid, &status, 0) == pid);
+	if (waitpid(pid, &status, 0) != pid) {
+		pr_perror("waitpid");
+		exit(1);
+	}
 	assert(WIFEXITED(status));
 	assert(WEXITSTATUS(status) == 0);
 }
