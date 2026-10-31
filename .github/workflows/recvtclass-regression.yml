@@ -1,0 +1,55 @@
+name: RECVTCLASS regression proof
+on: push
+jobs:
+  regression:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build CRIU and ZDTM in Alpine
+        run: sudo make -C scripts/build alpine
+      - name: Check fixed, base and mutations
+        run: |
+          sudo docker run --rm --privileged --userns=host --cgroupns=host -i \
+            -v "$PWD:/evidence" criu-alpine sh -se <<'SCRIPT'
+          cp criu/sk-inet.c /tmp/fixed-sk-inet.c
+          mkdir -p /evidence/recvtclass-evidence
+          run_test() {
+            name="$1"
+            shift
+            set +e
+            python3 test/zdtm.py run -t zdtm/static/sock_ip_opts00 -f "$@" > "/evidence/recvtclass-evidence/$name.log" 2>&1
+            result=$?
+            set -e
+            cat "/evidence/recvtclass-evidence/$name.log"
+          }
+          run_test fixed h,ns,uns
+          test "$result" -eq 0
+          python3 test/zdtm.py run -t zdtm/static/sock_ip_opts01 -f h,ns,uns > /evidence/recvtclass-evidence/disabled.log 2>&1
+          cat /evidence/recvtclass-evidence/disabled.log
+          cp /tmp/fixed-sk-inet.c /tmp/base-sk-inet.c
+          sed '/recvtclass/d' /tmp/base-sk-inet.c > criu/sk-inet.c
+          make -j4
+          run_test base h
+          test "$result" -ne 0
+          grep -R 'opts(41,66)' test/zdtm/static/sock_ip_opts00.out* /evidence/recvtclass-evidence/base.log
+          cp test/zdtm/static/sock_ip_opts00.out /evidence/recvtclass-evidence/base-test.out
+          for mutation in dump presence restore; do
+            cp /tmp/fixed-sk-inet.c criu/sk-inet.c
+            case "$mutation" in
+              dump) sed -i '/dump_opt(sk, SOL_IPV6, IPV6_RECVTCLASS/d' criu/sk-inet.c ;;
+              presence) sed -i 's/ioe->has_recvtclass = !!ioe->recvtclass;/ioe->has_recvtclass = 0;/' criu/sk-inet.c ;;
+              restore) sed -i '/if (ioe->has_recvtclass)/,+1d' criu/sk-inet.c ;;
+            esac
+            make -j4
+            run_test "mutation-$mutation" h
+            test "$result" -ne 0
+            grep -R 'opts(41,66)' test/zdtm/static/sock_ip_opts00.out* "/evidence/recvtclass-evidence/mutation-$mutation.log"
+            cp test/zdtm/static/sock_ip_opts00.out "/evidence/recvtclass-evidence/mutation-$mutation-test.out"
+          done
+          SCRIPT
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: recvtclass-evidence
+          path: recvtclass-evidence/
