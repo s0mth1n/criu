@@ -888,7 +888,11 @@ static int dump_one_shmem(struct shmem_info *si)
 		do {
 			ret = read(fd, addr + cur, remaining);
 			if (ret <= 0) {
-				pr_perror("Can't read virtual memory");
+				if (ret < 0)
+					pr_perror("Can't read virtual memory");
+				else
+					pr_err("Unexpected EOF reading virtual memory\n");
+				ret = -1;
 				goto errc;
 			}
 			remaining -= ret;
