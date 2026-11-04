@@ -14,6 +14,7 @@
 #include "filesystems.h"
 #include "mount.h"
 #include "mount-v2.h"
+#include "action-scripts.h"
 #include "namespaces.h"
 #include "fs-magic.h"
 #include "path.h"
@@ -1238,6 +1239,7 @@ err:
 static int assemble_mount_namespaces(void)
 {
 	int orig_nsfd = -1, nsfd = -1, rootfd = -1, exit_code = -1;
+	int cur_nsfd, hfd, ret;
 	char path[PATH_MAX];
 	struct ns_id *nsid;
 
@@ -1260,6 +1262,37 @@ static int assemble_mount_namespaces(void)
 
 		/* Set its root */
 		print_ns_root(nsid, 0, path, sizeof(path) - 1);
+
+		/*
+		 * Run the hook from the original mount namespace: the
+		 * restored namespace holds only the roots yard at this
+		 * point, so host action-script paths would not resolve
+		 * in it.
+		 */
+		cur_nsfd = open_proc(PROC_SELF, "ns/mnt");
+		if (cur_nsfd < 0)
+			goto err;
+		hfd = fcntl(orig_nsfd, F_DUPFD_CLOEXEC, 0);
+		if (hfd < 0) {
+			pr_perror("Can't dup the original mntns fd");
+			close(cur_nsfd);
+			goto err;
+		}
+		ret = switch_ns_by_fd(hfd, &mnt_ns_desc, NULL);
+		close(hfd);
+		if (ret) {
+			close(cur_nsfd);
+			goto err;
+		}
+		ret = run_scripts(ACT_POST_MOUNTS);
+		if (switch_ns_by_fd(cur_nsfd, &mnt_ns_desc, NULL)) {
+			close(cur_nsfd);
+			goto err;
+		}
+		close(cur_nsfd);
+		if (ret)
+			goto err;
+
 		if (cr_pivot_root(path))
 			goto err;
 

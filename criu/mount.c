@@ -17,6 +17,7 @@
 #include "plugin.h"
 #include "filesystems.h"
 #include "mount.h"
+#include "action-scripts.h"
 #include "mount-v2.h"
 #include "pstree.h"
 #include "image.h"
@@ -3662,6 +3663,10 @@ int prepare_mnt_ns(void)
 
 		/* Set its root */
 		print_ns_root(nsid, 0, path, sizeof(path) - 1);
+
+		if (run_scripts(ACT_POST_MOUNTS))
+			goto err;
+
 		if (cr_pivot_root(path))
 			goto err;
 

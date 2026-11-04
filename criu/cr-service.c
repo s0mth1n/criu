@@ -212,6 +212,7 @@ int send_criu_rpc_script(enum script_actions act, char *name, int sk, int fd)
 
 	switch (act) {
 	case ACT_SETUP_NS:
+	case ACT_POST_MOUNTS:
 	case ACT_POST_RESTORE:
 		/*
 		 * FIXME pid is required only once on
