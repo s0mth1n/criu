@@ -23,4 +23,10 @@ message memfd_inode_entry {
 	required uint64		inode_id	= 7;
 	optional uint32		hugetlb_flag	= 8;
 	optional uint32		mode		= 9;
+	/*
+	 * Set when the memfd contents were preserved in a liveupdate
+	 * session (--luo-session) instead of the page images. The value
+	 * is the token used for SESSION_PRESERVE_FD/RETRIEVE_FD.
+	 */
+	optional uint64		luo_token	= 10;
 };

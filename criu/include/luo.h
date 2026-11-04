@@ -20,6 +20,13 @@
 bool luo_mode_enabled(void);
 
 /*
+ * Dump-side helper: preserve fd in the session named by
+ * opts.luo_session, creating the session on first use. token must be
+ * unique within the session. Returns 0 or a negative errno.
+ */
+int luo_preserve_memfd(int fd, uint64_t token);
+
+/*
  * Create a new session on /dev/liveupdate (dump side).
  * Returns the session fd, or a negative errno.
  */

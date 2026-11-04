@@ -24,6 +24,7 @@
 
 #include "protobuf.h"
 #include "images/memfd.pb-c.h"
+#include "luo.h"
 
 #define MEMFD_PREFIX	 "/memfd:"
 #define MEMFD_PREFIX_LEN (sizeof(MEMFD_PREFIX) - 1)
@@ -81,9 +82,27 @@ static int dump_memfd_inode(int fd, struct memfd_dump_inode *inode, const char *
 	pr_info("Dumping memfd:%s contents (id %#x, shmid: %#x, size: %" PRIu64 ")\n", name, inode->id, shmid,
 		st->st_size);
 
+	if (luo_mode_enabled() && !is_hugetlb_dev(inode->dev, NULL)) {
+		/*
+		 * Try to preserve the memfd in the liveupdate session
+		 * instead of serializing its pages. The token is unique
+		 * per session, so the stable per-dump inode id alone is
+		 * enough. Fall back to the regular disk dump when the
+		 * kernel rejects the preservation.
+		 */
+		if (luo_preserve_memfd(fd, inode->id) == 0) {
+			mie.luo_token = inode->id;
+			mie.has_luo_token = true;
+			pr_info("Preserved memfd:%s in liveupdate session (token %#" PRIx64 ")\n", name, (uint64_t)mie.luo_token);
+			goto skip_contents;
+		}
+		pr_warn("liveupdate preserve failed for memfd:%s, dumping to disk\n", name);
+	}
+
 	if (dump_one_memfd_shmem(fd, shmid, st->st_size) < 0)
 		goto out;
 
+skip_contents:
 	mie.inode_id = inode->id;
 	mie.uid = userns_uid(st->st_uid);
 	mie.gid = userns_gid(st->st_gid);

@@ -137,3 +137,16 @@ int luo_session_finish(int session_fd)
 	}
 	return 0;
 }
+
+int luo_preserve_memfd(int fd, uint64_t token)
+{
+	static int session_fd = -1;
+
+	if (session_fd < 0) {
+		session_fd = luo_session_create(opts.luo_session);
+		if (session_fd < 0)
+			return session_fd;
+	}
+
+	return luo_preserve_fd(session_fd, fd, token);
+}
