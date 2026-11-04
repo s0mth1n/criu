@@ -16,6 +16,13 @@ EXPECTED_ACTIONS = [
     'post-resume',
 ]
 
+# post-mounts fires from the root task's restore context inside the
+# CR_STATE_PREPARE_NAMESPACES stage, so it races with the main process
+# firing post-setup-namespaces: it is guaranteed to appear after
+# setup-namespaces and before post-restore, but its position relative
+# to post-setup-namespaces is timing-dependent.
+RACY_ACTION = 'post-mounts'
+
 errors = []
 actions_called = []
 actions_called_file = os.path.join(os.path.dirname(__file__), 'actions_called.txt')
@@ -29,10 +36,6 @@ with open(actions_called_file) as f:
         if action_hook == 'EMPTY':
             raise ValueError("Error in test: bogus actions line")
 
-        expected_action = EXPECTED_ACTIONS[index] if index < len(EXPECTED_ACTIONS) else None
-        if action_hook != expected_action:
-            raise ValueError(f"Invalid action: {action_hook} != {expected_action}")
-
         if image_dir == 'EMPTY':
             errors.append(f'Action {action_hook} misses CRTOOLS_IMAGE_DIR')
 
@@ -44,8 +47,19 @@ with open(actions_called_file) as f:
 
         actions_called.append(action_hook)
 
-if actions_called != EXPECTED_ACTIONS:
-    errors.append(f'Not all actions called: {actions_called!r}')
+main_actions = [a for a in actions_called if a != RACY_ACTION]
+if main_actions != EXPECTED_ACTIONS:
+    errors.append(f'Not all actions called: {main_actions!r}')
+
+racy_count = actions_called.count(RACY_ACTION)
+if racy_count != 1:
+    errors.append(f'{RACY_ACTION} called {racy_count} times, expected once')
+else:
+    racy_index = actions_called.index(RACY_ACTION)
+    if racy_index <= actions_called.index('setup-namespaces'):
+        errors.append(f'{RACY_ACTION} called before setup-namespaces')
+    if racy_index >= actions_called.index('post-restore'):
+        errors.append(f'{RACY_ACTION} called after post-restore')
 
 if errors:
     print('\n'.join(errors))
