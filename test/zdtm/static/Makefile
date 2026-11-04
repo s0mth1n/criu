@@ -418,7 +418,8 @@ TST_FILE	=				\
 		sk-unix-listen04		\
 		sk-unix-restore-fs-share	\
 		mnt_ext_file_bind_auto		\
-		futex_robust_list
+		futex_robust_list			\
+		futex_robust_pshared
 
 TST_DIR		=				\
 		cwd00				\
@@ -644,7 +645,9 @@ file_locks06 file_locks07 file_locks08:	ofd_file_locks.o
 fpu03:			CFLAGS += -pthread -D ZDTM_FPU00_RUN_IN_THREAD
 fpu03:			LDFLAGS += -pthread
 futex:			CFLAGS += -pthread
+futex_robust_pshared:		CFLAGS += -pthread
 futex:			LDFLAGS += -pthread
+futex_robust_pshared:		LDFLAGS += -pthread
 futex-rl:		CFLAGS += -pthread
 futex-rl:		LDFLAGS += -pthread
 jobctl00:		LDLIBS += -lutil
