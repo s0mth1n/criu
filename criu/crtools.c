@@ -543,6 +543,9 @@ usage:
 	       "                        will be punched from the image\n"
 	       "  --pre-dump-mode       splice - parasite based pre-dumping (default)\n"
 	       "                        read   - process_vm_readv syscall based pre-dumping\n"
+	       "  --luo-session NAME    preserve memfd contents in liveupdate session NAME\n"
+	       "                        instead of writing them to images (experimental,\n"
+	       "                        requires Linux 6.19+ liveupdate; dump and restore)\n"
 #ifdef CONFIG_LZ4
 	       "  -c|--compress         enable LZ4 memory page compression\n"
 	       "  --compress-block size\n"

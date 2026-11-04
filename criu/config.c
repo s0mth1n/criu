@@ -771,6 +771,7 @@ int parse_options(int argc, char **argv, bool *usage_error, bool *has_exec_cmd, 
 		{ "compress-block", required_argument, 0, 1103 },
 		{ "decompress-threads", required_argument, 0, 1104 },
 		{ "plugin-option", required_argument, 0, 1105 },
+		{ "luo-session", required_argument, 0, 1106 },
 		{},
 	};
 
@@ -925,6 +926,9 @@ int parse_options(int argc, char **argv, bool *usage_error, bool *has_exec_cmd, 
 			opts.decompress_threads = (unsigned int)n;
 			break;
 		}
+		case 1106:
+			SET_CHAR_OPTS(luo_session, optarg);
+			break;
 		case 1105:
 			if (cr_plugin_option_add_arg(optarg))
 				return 1;
