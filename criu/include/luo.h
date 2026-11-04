@@ -27,6 +27,20 @@ bool luo_mode_enabled(void);
 int luo_preserve_memfd(int fd, uint64_t token);
 
 /*
+ * Restore-side helper: retrieve a preserved memfd by token from the
+ * session named by opts.luo_session, retrieving the session on first
+ * use. Returns the new fd or a negative errno.
+ */
+int luo_retrieve_memfd(uint64_t token);
+
+/*
+ * Restore-side helper: release kernel ownership of the session after
+ * all preserved fds were retrieved. No-op when no session is open.
+ * Returns 0 or a negative errno.
+ */
+int luo_finish_restore(void);
+
+/*
  * Create a new session on /dev/liveupdate (dump side).
  * Returns the session fd, or a negative errno.
  */

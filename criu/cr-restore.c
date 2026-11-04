@@ -86,6 +86,7 @@
 #include "fdstore.h"
 #include "string.h"
 #include "memfd.h"
+#include "luo.h"
 #include "timens.h"
 #include "bpfmap.h"
 #include "apparmor.h"
@@ -2213,6 +2214,10 @@ skip_ns_bouncing:
 	ret = apply_memfd_seals();
 	if (ret < 0)
 		goto out_kill;
+
+	if (luo_finish_restore()) {
+		pr_warn("Can't finish the liveupdate session; preserved resources leak until the next live update\n");
+	}
 
 	/*
 	 * Zombies die after CR_STATE_PRE_RESTORER which is switched

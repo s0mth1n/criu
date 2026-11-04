@@ -283,6 +283,35 @@ static int memfd_open_inode_nocache(struct memfd_restore_inode *inode)
 	int flags;
 
 	mie = inode->mie;
+	if (mie->has_luo_token) {
+		struct stat st;
+
+		/*
+		 * Contents, size and seals were preserved in the
+		 * liveupdate session at dump time, so the retrieved fd
+		 * is complete: skip memfd_create, resizing and the
+		 * content fill, and don't re-apply seals (adding seals
+		 * to an fd carrying F_SEAL_SEAL would fail).
+		 */
+		fd = luo_retrieve_memfd(mie->luo_token);
+		if (fd < 0) {
+			pr_err("Can't retrieve liveupdate-preserved memfd:%s (token %" PRIu64 "\n",
+			       mie->name, mie->luo_token);
+			goto err;
+		}
+		if (fstat(fd, &st) < 0) {
+			pr_perror("Can't stat retrieved memfd:%s", mie->name);
+			goto err;
+		}
+		if (st.st_size != mie->size) {
+			pr_err("Retrieved memfd:%s size %" PRIu64 " != image size %" PRIu64 "\n", mie->name,
+			       (uint64_t)st.st_size, mie->size);
+			goto err;
+		}
+		inode->pending_seals = 0;
+		goto fill_done;
+	}
+
 	if (mie->seals == F_SEAL_SEAL) {
 		inode->pending_seals = 0;
 		flags = 0;
@@ -327,6 +356,7 @@ static int memfd_open_inode_nocache(struct memfd_restore_inode *inode)
 			goto err;
 	}
 
+fill_done:
 	if (mie->has_mode)
 		ret = cr_fchperm(fd, mie->uid, mie->gid, mie->mode);
 	else

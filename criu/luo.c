@@ -150,3 +150,34 @@ int luo_preserve_memfd(int fd, uint64_t token)
 
 	return luo_preserve_fd(session_fd, fd, token);
 }
+
+static int restore_session_fd = -1;
+
+int luo_retrieve_memfd(uint64_t token)
+{
+	if (!opts.luo_session) {
+		pr_err("luo: images contain liveupdate-preserved memfds; restore needs --luo-session NAME\n");
+		return -EINVAL;
+	}
+
+	if (restore_session_fd < 0) {
+		restore_session_fd = luo_session_retrieve(opts.luo_session);
+		if (restore_session_fd < 0)
+			return restore_session_fd;
+	}
+
+	return luo_retrieve_fd(restore_session_fd, token);
+}
+
+int luo_finish_restore(void)
+{
+	int ret;
+
+	if (restore_session_fd < 0)
+		return 0;
+
+	ret = luo_session_finish(restore_session_fd);
+	close(restore_session_fd);
+	restore_session_fd = -1;
+	return ret;
+}
