@@ -418,7 +418,8 @@ TST_FILE	=				\
 		sk-unix-listen04		\
 		sk-unix-restore-fs-share	\
 		mnt_ext_file_bind_auto		\
-		futex_robust_list
+		futex_robust_list			\
+		futex_robust_pshared
 
 TST_DIR		=				\
 		cwd00				\
@@ -649,6 +650,8 @@ futex:			CFLAGS += -pthread
 futex:			LDFLAGS += -pthread
 futex-rl:		CFLAGS += -pthread
 futex-rl:		LDFLAGS += -pthread
+futex_robust_pshared:	CFLAGS += -pthread
+futex_robust_pshared:	LDFLAGS += -pthread
 jobctl00:		LDLIBS += -lutil
 socket_listen:		LDLIBS += -lrt -pthread
 socket_aio:		LDLIBS += -lrt -pthread
