@@ -678,6 +678,8 @@ function run_test_legacy {
 
 ${CRIT} --version
 
+PYTHONPATH="${BASE_DIR}/lib" python3 "${CRIT_TEST_DIR}/crit_payload_tests.py"
+
 gen_imgs
 run_test1
 run_test2
