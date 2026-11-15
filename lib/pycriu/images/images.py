@@ -371,7 +371,7 @@ class bpfmap_data_extra_handler:
         return base64.encodebytes(data).decode('utf-8')
 
     def dump(self, extra, f, pload):
-        data = base64.decodebytes(extra)
+        data = decode_base64_data(extra)
         f.write(data)
 
     def skip(self, f, pload):
@@ -472,7 +472,7 @@ class ipc_shm_handler:
     def dump(self, extra, f, pbuff):
         entry = pb2dict.pb2dict(pbuff)
         size = entry['size']
-        data = base64.decodebytes(extra)
+        data = decode_base64_data(extra)
         rounded = round_up(size, sizeof_u32)
         f.write(data[:size])
         f.write(b'\0' * (rounded - size))
