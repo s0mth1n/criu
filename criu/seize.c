@@ -771,6 +771,45 @@ free:
 	return ret < 0 ? ret : nr_inprogress;
 }
 
+static void diag_log_thread_state(const struct pstree_item *item, pid_t tid)
+{
+	char path[64], line[256];
+	char name[64] = "?", state[96] = "?", tracer[32] = "?", nspid[128] = "?";
+	char *p;
+	FILE *f;
+
+	snprintf(path, sizeof(path), "/proc/%d/status", tid);
+	f = fopen(path, "r");
+	if (!f) {
+		pr_err("DIAG item=%d tid=%d: /proc open failed (errno %d)\n",
+		       item->pid->real, tid, errno);
+		return;
+	}
+	while (fgets(line, sizeof(line), f)) {
+		if (!strncmp(line, "Name:", 5))
+			sscanf(line + 5, "%63s", name);
+		else if (!strncmp(line, "State:", 6)) {
+			p = line + 6;
+			while (*p == ' ' || *p == '\t')
+				p++;
+			snprintf(state, sizeof(state), "%s", p);
+			state[strcspn(state, "\n")] = 0;
+		} else if (!strncmp(line, "TracerPid:", 10))
+			sscanf(line + 10, "%31s", tracer);
+		else if (!strncmp(line, "NSpid:", 6)) {
+			p = line + 6;
+			while (*p == ' ' || *p == '\t')
+				p++;
+			snprintf(nspid, sizeof(nspid), "%s", p);
+			nspid[strcspn(nspid, "\n")] = 0;
+		}
+	}
+	fclose(f);
+	pr_err("DIAG item=%d(item_state=%d,nr_threads=%d) tid=%d name=%s state=%s tracer=%s nspid=%s\n",
+	       item->pid->real, item->pid->state, item->nr_threads,
+	       tid, name, state, tracer, nspid);
+}
+
 static void clear_futex_robust_list(const struct pstree_item *item)
 {
 	unsigned long n = 0;
@@ -790,9 +829,11 @@ static void clear_futex_robust_list(const struct pstree_item *item)
 
 		/* zero out robust_list_head->list. */
 		if (ptrace_poke_area(item->threads[i].real, &n,
-				     decode_pointer(tc->futex_rla), sizeof(n)))
+				     decode_pointer(tc->futex_rla), sizeof(n))) {
 			pr_err("Unable to reset the robust list for %d\n",
 			       item->threads[i].real);
+			diag_log_thread_state(item, item->threads[i].real);
+		}
 	}
 }
 
