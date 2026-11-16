@@ -1999,6 +1999,17 @@ static int cr_dump_finish(int ret)
 
 	cr_plugin_fini(CR_PLUGIN_STAGE__DUMP, ret ?: post_dump_ret);
 
+	/*
+	 * The tasks are about to be terminated: zero out their futex robust
+	 * list heads now, while they are still seized and frozen. Doing this
+	 * at unseize time is too late: the tree root is killed first, and
+	 * when it is a pid namespace init, the kernel kills the other dumped
+	 * tasks along with it, so pokes on their zombie threads fail with
+	 * ESRCH and the robust lists stay armed.
+	 */
+	if (!ret && !post_dump_ret && opts.final_state == TASK_DEAD)
+		clear_futex_robust_lists(root_item);
+
 	pstree_switch_state(root_item, (ret || post_dump_ret) ? TASK_ALIVE : opts.final_state);
 	timing_stop(TIME_FROZEN);
 	free_pstree(root_item);

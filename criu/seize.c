@@ -10,6 +10,7 @@
 #include <time.h>
 
 #include "int.h"
+#include "asm/types.h"
 #include "common/compiler.h"
 #include "cr_options.h"
 #include "cr-errno.h"
@@ -768,6 +769,47 @@ static int collect_children(struct pstree_item *item)
 free:
 	xfree(ch);
 	return ret < 0 ? ret : nr_inprogress;
+}
+
+static void clear_futex_robust_list(const struct pstree_item *item)
+{
+	unsigned long n = 0;
+	int i;
+
+	for (i = 0; i < item->nr_threads; i++) {
+		CoreEntry *core;
+		ThreadCoreEntry *tc;
+
+		if (!item->core || !item->core[i] || !item->core[i]->thread_core)
+			continue;
+
+		core = item->core[i];
+		tc = core->thread_core;
+		if (!tc->futex_rla)
+			continue;
+
+		/* zero out robust_list_head->list. */
+		if (ptrace_poke_area(item->threads[i].real, &n,
+				     decode_pointer(tc->futex_rla), sizeof(n)))
+			pr_err("Unable to reset the robust list for %d\n",
+			       item->threads[i].real);
+	}
+}
+
+/*
+ * Zero out the robust list heads of all dumped tasks. Must be called
+ * while the tasks are still seized and frozen, before any of them is
+ * killed: ptrace pokes on a dead thread fail with ESRCH.
+ */
+void clear_futex_robust_lists(struct pstree_item *root)
+{
+	struct pstree_item *item;
+
+	for_each_pstree_item(item) {
+		if (item->pid->state == TASK_DEAD)
+			continue;
+		clear_futex_robust_list(item);
+	}
 }
 
 static void unseize_task_and_threads(const struct pstree_item *item, int st)
